@@ -1,4 +1,4 @@
-const { exec } = require("node:child_process");
+const { execSync } = require("node:child_process");
 const Anthropic = require("@anthropic-ai/sdk");
 const loadenv = require('loadenv');
 
@@ -10,6 +10,7 @@ const model = process.env.MODEL_ID;
 const workspace = process.cwd();
 const systemPrompt = `You are a coding agent at ${workspace}. Use bash to solve tasks. Act, don't explain.`;
 const toggleHistory = false;
+const dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"];
 
 
 const client = new Anthropic({
@@ -31,21 +32,23 @@ const TOOLS = [
 ];
 
 function runBash(command) {
-  const dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"];
   if (dangerous.some((d) => command.includes(d))) {
-    return Promise.resolve("Error: Dangerous command blocked");
+    return "Error: Dangerous command blocked";
   }
-  return new Promise((resolve) => {
-    exec(
+  try {
+    output = execSync(
       command,
-      { cwd: workspace, shell: "/bin/sh", timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error && error.killed) return resolve("Error: Timeout (120s)");
-        const out = `${stdout}${stderr}`.trim();
-        resolve(out ? out.slice(0, 50000) : "(no output)");
-      }
-    );
-  });
+      {
+        cwd: workspace,
+        shell: "/bin/sh",
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024,
+        encoding: "utf8"
+      });
+    return output.trim() || "(no output)"
+  } catch (e) {
+    return (e.stdout + e.stderr).trin().slice(0, 50000) || `Error: ${e.message}`
+  }
 }
 
 function callLLM(messages) {
